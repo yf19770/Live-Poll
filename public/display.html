@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Display</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="display-body">
+    
+    <div id="display-container" class="container">
+        <!-- Lobby State -->
+        <div id="lobby-screen" class="display-state">
+            <h1 id="lobby-game-title">Welcome!</h1>
+            <div class="qr-container">
+                <div id="qrcode"></div>
+            </div>
+        </div>
+
+        <!-- Question State -->
+        <div id="question-screen" class="display-state hidden">
+            <h1 id="display-question-title"></h1>
+            <div class="options-display-grid">
+                <!-- Options will be populated by JS -->
+            </div>
+            <div class="timer-container">
+                <p>Time Left</p>
+                <div id="timer">30</div>
+            </div>
+        </div>
+
+        <!-- Results State -->
+        <div id="results-screen" class="display-state hidden">
+            <h1 id="results-question-title"></h1>
+            <div class="chart-container">
+                <canvas id="results-chart"></canvas>
+            </div>
+        </div>
+
+         <!-- Error State -->
+        <div id="error-screen" class="display-state hidden">
+             <h1>Error</h1>
+             <p id="error-message-text"></p>
+        </div>
+    </div>
+
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator/qrcode.js"></script>
+    <script type="module" src="js/display.js"></script>
+</body>
+</html>```
+
+### **`public/vote.html` (Revised)**
+
+This page also only needs the `gameId` and will wait in a lobby until the `currentQuestionId` is set by the admin.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vote Now!</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="vote-body">
+    <div id="vote-container" class="container centered-container">
+        
+        <div id="lobby-state">
+            <div class="spinner"></div>
+            <h2 id="vote-game-title">Joining Game...</h2>
+            <p>Waiting for the host to start the next question.</p>
+        </div>
+        
+        <div id="question-state" class="hidden">
+            <h1 id="question-title"></h1>
+            <div id="options-grid"></div>
+        </div>
+
+        <div id="voted-state" class="hidden">
+            <svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
+                <circle class="checkmark__circle" cx="26" cy="26" r="25" fill="none"/>
+                <path class="checkmark__check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+            </svg>
+            <h2>Thanks for voting!</h2>
+            <p>Waiting for the next question...</p>
+        </div>
+
+    </div>
+    <script type="module" src="js/vote.js"></script>
+</body>
+</html>

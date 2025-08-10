@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Libraries for Charts and QR Codes -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator/qrcode.js"></script>
+</head>
+<body>
+
+    <!-- Login Section -->
+    <div id="login-section" class="container centered-container">
+        <div class="card">
+            <h2>Admin Login</h2>
+            <form id="login-form">
+                <input type="email" id="login-email" placeholder="Email" required autocomplete="email">
+                <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password">
+                <button type="submit" class="button">Login</button>
+                <p id="login-error" class="error-message"></p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Dashboard (Hidden by default) -->
+    <div id="dashboard-section" class="admin-container hidden">
+        <!-- Sidebar for Games -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h2>LiveVoter</h2>
+                <button id="logout-button" class="button-secondary button-small">Logout</button>
+            </div>
+            <div class="sidebar-content">
+                <h3><span class="emoji">🎮</span> Games</h3>
+                <form id="create-game-form">
+                    <input type="text" id="game-title" placeholder="New Game Title" required>
+                    <button type="submit" class="button">Create Game</button>
+                </form>
+                <div id="games-list" class="item-list"></div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <header class="main-header">
+                <button id="mobile-menu-btn" class="mobile-menu-btn button-secondary">Menu</button>
+                <div class="main-header-game-info initially-hidden">
+                    <h1 id="main-game-title"></h1>
+                </div>
+                <div class="header-actions initially-hidden">
+                    <button id="reset-game-button" class="button-secondary">Reset Votes</button>
+                    <button id="delete-game-button" class="button end-btn">Delete Game</button>
+                </div>
+            </header>
+
+            <!-- Initial State: Shown when no game is selected -->
+            <div id="initial-state" class="centered-container">
+                <div class="placeholder-text-lg">
+                    <span class="emoji initial-prompt-emoji">👈</span>
+                    <h2>Select or Create a Game</h2>
+                    <p>Choose a game from the sidebar to begin.</p>
+                </div>
+            </div>
+
+            <!-- Game Dashboard: Shown when a game is selected -->
+            <div id="game-dashboard" class="hidden">
+
+                <!-- Tabs for navigation within a game -->
+                <div class="tabs">
+                    <button class="tab-button active" data-tab="live">🔴 Live Control</button>
+                    <button class="tab-button" data-tab="questions">📝 Questions</button>
+                    <button class="tab-button" data-tab="results">📊 Results</button>
+                </div>
+
+                <!-- Tab Content: Live Control -->
+                <div id="tab-content-live" class="tab-content active">
+                     <div class="mission-control-grid">
+                        <!-- Left Column: Audience Interaction -->
+                        <div class="control-panel audience-panel">
+                            <h3>Audience</h3>
+                            <div id="qr-code-container" class="qr-container-admin"></div>
+                            <button id="copy-join-link-btn" class="button-secondary">
+                                <span class="emoji">🔗</span> Copy Join Link
+                            </button>
+                            <a href="#" target="_blank" id="open-display-btn" class="button">
+                                <span class="emoji">🖥️</span> Open Projector View
+                            </a>
+                        </div>
+                        
+                        <!-- Right Column: Show Running -->
+                        <div class="show-running-column">
+                            <!-- Panel 2: Question Flow -->
+                            <div class="control-panel question-flow-panel">
+                                 <h3>Question Flow</h3>
+                                 <button id="show-lobby-btn" class="button button-secondary">Show Lobby & QR Code</button>
+                                 <div id="live-questions-list" class="live-questions-list"></div>
+                            </div>
+                            <!-- Panel 3: Live Preview -->
+                            <div class="control-panel preview-panel">
+                                 <h3>Live Preview</h3>
+                                 <div class="preview-wrapper">
+                                    <div id="preview-container">
+                                        <iframe id="live-preview-iframe" src="about:blank" width="1280" height="720"></iframe>
+                                    </div>
+                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Content: Questions & Editor -->
+                <div id="tab-content-questions" class="tab-content">
+                    <div id="questions-list-container">
+                        <!-- Questions and the inline editor will be rendered here by JS -->
+                    </div>
+                </div>
+
+                <!-- Tab Content: Analytics/Results -->
+                <div id="tab-content-results" class="tab-content">
+                    <div id="analytics-container" class="analytics-grid">
+                        <!-- Analytics will be populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module" src="js/admin.js"></script>
+</body>
+</html>
