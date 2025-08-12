@@ -1,0 +1,208 @@
+
+/* --- Landing Page --- */
+.landing-body {
+    background-color: var(--white-color);
+}
+.landing-header {
+    padding: 15px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+.container-flex {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.logo {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    text-decoration: none;
+}
+.landing-header nav a {
+    text-decoration: none;
+    color: var(--body-text-color);
+    margin-left: 20px;
+    font-weight: 500;
+    transition: color 0.2s;
+}
+.landing-header nav a:hover {
+    color: var(--primary-color);
+}
+#hero {
+    background-color: var(--light-bg-color);
+    padding: 80px 20px;
+}
+.hero-title {
+    font-size: clamp(2.5rem, 5vw, 4rem);
+    line-height: 1.2;
+    margin-bottom: 15px;
+}
+.hero-subtitle {
+    font-size: clamp(1.1rem, 2vw, 1.25rem);
+    max-width: 650px;
+    margin: 0 auto 30px auto;
+    color: var(--body-text-color);
+}
+#features {
+    padding: 60px 20px;
+}
+.section-title {
+    text-align: center;
+    font-size: 2.5rem;
+    margin-bottom: 40px;
+}
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 30px;
+}
+.feature-card {
+    border: 1px solid var(--border-color);
+    padding: 30px;
+    border-radius: var(--border-radius);
+    text-align: center;
+}
+.feature-card h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+.landing-footer {
+    background-color: var(--dark-text-color);
+    color: var(--light-bg-color);
+    padding: 20px;
+}
+
+
+/* --- Vote & Display Pages --- */
+.vote-body {
+    background-color: #343a40;
+}
+.vote-body .card {
+    width: 100%;
+    max-width: 500px;
+    background: var(--white-color);
+}
+.vote-question-title {
+    color: var(--white-color);
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 2rem;
+}
+#options-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    width: 100%;
+    max-width: 700px;
+    margin-top: 30px;
+}
+.option-button {
+    height: 150px;
+    border-radius: var(--border-radius);
+    color: white;
+    font-size: 1.8rem;
+    font-weight: 700;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    text-shadow: 1px 1px 3px rgba(0,0,0,0.3);
+    padding: 10px;
+    text-align: center;
+    border: 3px solid rgba(255,255,255,0.5);
+}
+.option-button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+    border-color: rgba(255,255,255,0.9);
+}
+.chart-container-vote {
+    position: relative;
+    height: 300px;
+    width: 100%;
+    max-width: 450px;
+    margin: 20px auto;
+}
+.display-body {
+    background: #18191A;
+    color: white;
+    overflow: hidden;
+}
+.display-state {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    height: 100vh;
+    width: 100%;
+    padding: 40px;
+    box-sizing: border-box;
+}
+.display-state h1 {
+    font-size: clamp(2rem, 7vw, 5.5rem);
+    margin-bottom: 20px;
+    line-height: 1.2;
+}
+.join-prompt {
+    font-size: clamp(1.2rem, 3vw, 2rem);
+    color: var(--accent-color);
+    margin-bottom: 25px;
+}
+#qrcode {
+    background: white;
+    padding: 20px;
+    border-radius: var(--border-radius);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+}
+#qrcode img {
+    display: block;
+}
+.timer-container {
+    position: absolute;
+    top: 30px;
+    right: 40px;
+    background: rgba(0,0,0,0.2);
+    padding: 10px 20px;
+    border-radius: var(--border-radius);
+}
+.timer-container p {
+    font-size: clamp(1rem, 2vw, 1.5rem);
+    margin: 0;
+    font-weight: 500;
+}
+#timer {
+    font-size: clamp(3rem, 8vw, 5rem);
+    font-weight: 700;
+}
+.chart-container {
+    width: 90%;
+    max-width: 1100px;
+    height: 75vh;
+}
+.options-display-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 25px;
+    width: 85%;
+    margin: 30px 0;
+}
+.option-display-item {
+    padding: 40px;
+    color: white;
+    font-size: clamp(1.2rem, 3.5vw, 2.8rem);
+    font-weight: 700;
+    text-align: center;
+    border-radius: var(--border-radius);
+    text-shadow: 1px 1px 3px rgba(0,0,0,0.4);
+    border: 4px solid;
+}
+
+@media (max-width: 768px) {
+    #options-grid, .options-display-grid { grid-template-columns: 1fr; }
+    .features-grid { grid-template-columns: 1fr; }
+}

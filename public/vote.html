@@ -3,53 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vote Now!</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>Live Poll - Vote</title>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/core.css">
+    <link rel="stylesheet" href="css/app.css">
 </head>
 <body class="vote-body">
+    <div class="background-shapes"></div>
     <div id="vote-container" class="container centered-container">
         
-        <!-- Lobby State: Waiting for question -->
         <div id="lobby-state">
             <div class="card text-center">
                 <div class="spinner"></div>
-                <h2 id="vote-game-title">Joining Game...</h2>
-                <p id="lobby-message">Waiting for the host to start the next question.</p>
+                <h2 id="vote-poll-title">Joining Poll...</h2>
+                <p>Waiting for the host to start.</p>
             </div>
         </div>
         
-        <!-- Question State: Options are shown -->
         <div id="question-state" class="hidden">
             <h1 id="question-title-vote" class="vote-question-title"></h1>
             <div id="options-grid"></div>
         </div>
 
-        <!-- Voted State: Confirmation after voting -->
         <div id="voted-state" class="hidden">
              <div class="card text-center">
-                <svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
-                    <circle class="checkmark__circle" cx="26" cy="26" r="25" fill="none"/>
-                    <path class="checkmark__check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
-                </svg>
-                <h2>Thanks for voting!</h2>
-                <p>Waiting for the results or the next question...</p>
+                <svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52"><circle class="checkmark__circle" cx="26" cy="26" r="25" fill="none"/><path class="checkmark__check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/></svg>
+                <h2>Vote cast!</h2>
+                <p>Waiting for the results...</p>
             </div>
         </div>
 
-        <!-- Results State: Chart is shown -->
         <div id="results-state" class="hidden">
             <div class="card text-center">
                 <h2 id="results-question-title-vote"></h2>
                 <div class="chart-container-vote">
                     <canvas id="vote-results-chart"></canvas>
                 </div>
-                 <p>Waiting for the next question...</p>
+                <!-- <p>Waiting for the next question...</p> -->
             </div>
         </div>
 
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
     <script type="module" src="js/vote.js"></script>
 </body>
 </html>

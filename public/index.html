@@ -3,17 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Show Voter</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <title>Live Poll - Dynamic Audience Engagement</title>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="css/core.css">
+    <link rel="stylesheet" href="css/app.css">
+    <link rel="stylesheet" href="css/landing.css">
 </head>
-<body>
-    <div class="container centered-container">
-        <div class="card">
-            <h1>Welcome to Live Show Voter</h1>
-            <p>The interactive voting system for your live events.</p>
-            <a href="/admin.html" class="button">Admin Panel</a>
+<body class="landing-body">
+    <div class="background-gradient"></div>
+
+    <header class="landing-header">
+        <div class="container-flex">
+            <a href="#" class="logo">Live Poll</a>
+            <nav>
+                <a href="/admin.html" class="button button-secondary">Login / Sign Up</a>
+            </nav>
         </div>
-    </div>
+    </header>
+
+    <main>
+        <section id="hero" class="text-center">
+            <div class="container">
+                <h1 class="hero-title">Feel the Room, in Real-Time.</h1>
+                <p class="hero-subtitle">A simple and powerful way to run live polls. Completely free and open source.</p>
+                
+                <div class="hero-buttons">
+                    <a href="/admin.html" class="button button-accent button-large"><i class="fa-solid fa-bolt"></i> Get Started</a>
+                    <a href="https://github.com/" target="_blank" rel="noopener noreferrer" class="button button-secondary button-large"><i class="fa-brands fa-github"></i> View on GitHub</a>
+                </div>
+            </div>
+        </section>
+
+        <section id="preview">
+            <div class="container text-center">
+                 <div class="dashboard-preview-image">
+                  
+                        <img src="https://i.ibb.co/2YHL7bVg/Screenshot-2025-08-12-at-12-08-30-AM.png" alt="Intera Dashboard Preview">
+                    
+                 </div>
+            </div>
+        </section>
+
+
+        <section id="open-source" class="text-center">
+            <div class="container">
+                <h2 class="section-title">Free & Open Source</h2>
+                <p class="hero-subtitle">Live-Poll is built for the community. You can use it for free, forever. Found it useful? Contributions and support are always welcome!</p>
+                <div class="community-buttons">
+                    <a href="https://github.com/" target="_blank" rel="noopener noreferrer" class="button button-secondary"><i class="fa-brands fa-github"></i> View on GitHub</a>
+                    <a href="https://www.buymeacoffee.com/" target="_blank" rel="noopener noreferrer" class="button button-accent"><i class="fa-solid fa-mug-hot"></i> Buy Me a Coffee</a>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
 </body>
 </html>

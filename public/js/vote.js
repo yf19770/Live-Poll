@@ -5,43 +5,37 @@ const lobbyState = document.getElementById('lobby-state');
 const questionState = document.getElementById('question-state');
 const votedState = document.getElementById('voted-state');
 const resultsState = document.getElementById('results-state');
-
-const voteGameTitle = document.getElementById('vote-game-title');
+const votePollTitle = document.getElementById('vote-poll-title');
 const lobbyMessage = document.getElementById('lobby-message');
 const questionTitle = document.getElementById('question-title-vote');
 const optionsGrid = document.getElementById('options-grid');
-// FIX IS HERE: Corrected ID to match vote.html
 const resultsQuestionTitle = document.getElementById('results-question-title-vote');
 const voteResultsChartCanvas = document.getElementById('vote-results-chart');
 
-// State Variables
-let currentGameId = null;
+// State Variables & Setup
+let currentUserId = null;
+let currentPollId = null;
 let currentQuestionId = null;
-let unsubscribeGame = null; 
+let unsubscribePoll = null; 
 let unsubscribeQuestion = null;
 let currentChart = null;
 
+if (typeof ChartDataLabels !== 'undefined') {
+    Chart.register(ChartDataLabels);
+}
+
 // --- UTILITY FUNCTIONS ---
 function showState(state, message) {
-    // Hide all states first, checking if they exist to prevent errors
-    [lobbyState, questionState, votedState, resultsState].forEach(el => {
-        if (el) el.classList.add('hidden');
-    });
-
-    // Now, show the correct state, also checking if it exists
-    if (state === 'lobby' && lobbyState) {
-        lobbyState.classList.remove('hidden');
-    } else if (state === 'question' && questionState) {
-        questionState.classList.remove('hidden');
-    } else if (state === 'voted' && votedState) {
-        votedState.classList.remove('hidden');
-    } else if (state === 'results' && resultsState) {
-        resultsState.classList.remove('hidden');
+    [lobbyState, questionState, votedState, resultsState].forEach(el => el && el.classList.add('hidden'));
+    
+    const targetState = document.getElementById(`${state}-state`);
+    if (targetState) {
+        targetState.classList.remove('hidden');
     } else if (state === 'error' && lobbyState) {
         lobbyState.classList.remove('hidden');
-        if(voteGameTitle) voteGameTitle.textContent = 'Error';
-        if(lobbyMessage) lobbyMessage.textContent = message || 'An error occurred.';
-        if (unsubscribeGame) unsubscribeGame();
+        if (votePollTitle) votePollTitle.textContent = 'Error';
+        if (lobbyMessage) lobbyMessage.textContent = message || 'An error occurred.';
+        if (unsubscribePoll) unsubscribePoll();
         if (unsubscribeQuestion) unsubscribeQuestion();
     }
 }
@@ -49,49 +43,52 @@ function showState(state, message) {
 // --- CORE LOGIC ---
 document.addEventListener('DOMContentLoaded', () => {
     const params = new URLSearchParams(window.location.search);
-    currentGameId = params.get('game');
-    if (!currentGameId) {
-        return showState('error', "No game specified. Make sure your link is correct.");
+    currentUserId = params.get('user');
+    currentPollId = params.get('poll');
+    
+    if (!currentPollId || !currentUserId) {
+        return showState('error', "Invalid join link. Please get a new one from the host.");
     }
+    
     showState('lobby');
-    listenToGame(currentGameId);
+    listenToPoll(currentUserId, currentPollId);
 });
 
-function listenToGame(gameId) {
-    if (unsubscribeGame) unsubscribeGame(); 
+function listenToPoll(userId, pollId) {
+    if (unsubscribePoll) unsubscribePoll(); 
 
-    const gameRef = doc(db, 'games', gameId);
-    unsubscribeGame = onSnapshot(gameRef, (gameDoc) => {
-        if (!gameDoc.exists()) {
-            return showState('error', "This game is no longer available.");
+    const pollRef = doc(db, 'users', userId, 'polls', pollId);
+    unsubscribePoll = onSnapshot(pollRef, (pollDoc) => {
+        if (!pollDoc.exists()) {
+            return showState('error', "This poll is no longer available.");
         }
-
-        const gameData = gameDoc.data();
-        if(voteGameTitle) voteGameTitle.textContent = `Joining "${gameData.title}"...`;
         
-        if (gameData.currentQuestionId && gameData.currentQuestionId !== currentQuestionId) {
-            currentQuestionId = gameData.currentQuestionId;
-            listenToQuestion(gameId, currentQuestionId);
-        } else if (!gameData.currentQuestionId) {
+        const pollData = pollDoc.data();
+        if (votePollTitle) votePollTitle.textContent = `Joining "${pollData.title}"...`;
+        
+        const newQuestionId = pollData.currentQuestionId;
+        if (newQuestionId && newQuestionId !== currentQuestionId) {
+            currentQuestionId = newQuestionId;
+            listenToQuestion(userId, pollId, currentQuestionId);
+        } else if (!newQuestionId) {
             if (unsubscribeQuestion) unsubscribeQuestion();
             currentQuestionId = null;
             showState('lobby');
         }
     }, (error) => {
-        console.error("Game Listener error:", error);
-        showState('error', "Lost connection to the game.");
+        console.error("Poll Listener error:", error);
+        showState('error', "Lost connection to the poll.");
     });
 }
 
-function listenToQuestion(gameId, questionId) {
+function listenToQuestion(userId, pollId, questionId) {
     if (unsubscribeQuestion) unsubscribeQuestion();
 
-    const questionRef = doc(db, 'games', gameId, 'questions', questionId);
+    const questionRef = doc(db, 'users', userId, 'polls', pollId, 'questions', questionId);
     unsubscribeQuestion = onSnapshot(questionRef, (qDoc) => {
         if (!qDoc.exists()) return; 
 
         const questionData = qDoc.data();
-        
         if (questionData.status === 'results_revealed') {
             renderResultsChart(questionData);
             showState('results');
@@ -104,10 +101,9 @@ function listenToQuestion(gameId, questionId) {
     });
 }
 
-
 function renderQuestion(data) {
     if (questionTitle) questionTitle.textContent = data.questionText;
-    if(optionsGrid) optionsGrid.innerHTML = ''; 
+    if (optionsGrid) optionsGrid.innerHTML = ''; 
     
     data.options.forEach(option => {
         const button = document.createElement('button');
@@ -125,19 +121,42 @@ async function handleVote(optionId) {
     showState('voted');
 
     try {
-        const questionRef = doc(db, 'games', currentGameId, 'questions', currentQuestionId);
+        const questionRef = doc(db, 'users', currentUserId, 'polls', currentPollId, 'questions', currentQuestionId);
         await updateDoc(questionRef, { [`voteCounts.${optionId}`]: increment(1) });
     } catch (error) {
         console.error("Error submitting vote:", error);
     }
 }
 
+// *** FIXED FUNCTION ***
 function renderResultsChart(data) {
-    if(resultsQuestionTitle) resultsQuestionTitle.textContent = data.questionText;
+    if (resultsQuestionTitle) resultsQuestionTitle.textContent = data.questionText;
     
     const labels = data.options.map(opt => opt.text);
     const colors = data.options.map(opt => opt.color);
     const votes = data.options.map(opt => data.voteCounts[opt.id] || 0);
+    const totalVotes = votes.reduce((a, b) => a + b, 0);
+
+    // --- HTML LEGEND GENERATION (Now for ALL chart types) ---
+    const legendContainer = document.createElement('div');
+    legendContainer.className = 'vote-results-legend';
+    data.options.forEach(opt => {
+        const voteCount = data.voteCounts[opt.id] || 0;
+        const percentage = totalVotes > 0 ? (voteCount / totalVotes * 100).toFixed(0) : 0;
+        legendContainer.innerHTML += `
+            <div class="legend-item">
+                <span class="legend-color-box" style="background-color: ${opt.color};"></span>
+                <span class="legend-text">${opt.text} <strong>(${percentage}%)</strong></span>
+            </div>
+        `;
+    });
+    // Clear old legend and append new one
+    const resultsCard = resultsState.querySelector('.card');
+    const existingLegend = resultsCard.querySelector('.vote-results-legend');
+    if (existingLegend) existingLegend.remove();
+    // Insert legend before the "waiting for next question" text
+    resultsCard.insertBefore(legendContainer, resultsCard.querySelector('p'));
+
 
     if (currentChart) currentChart.destroy();
     if (!voteResultsChartCanvas) return;
@@ -147,23 +166,31 @@ function renderResultsChart(data) {
         type: data.chartType || 'bar',
         data: {
             labels,
-            datasets: [{
-                label: 'Votes',
-                data: votes,
-                backgroundColor: colors,
-                borderColor: '#fff',
-                borderWidth: 1
-            }]
+            datasets: [{ data: votes, backgroundColor: colors, borderWidth: 0 }]
         },
         options: {
-             indexAxis: data.chartType === 'bar' ? 'y' : 'x', // Makes horizontal bars, standard pie
+             indexAxis: data.chartType === 'bar' ? 'y' : 'x',
              responsive: true,
              maintainAspectRatio: false,
-             plugins: { legend: { display: false } },
-             // THE FIX IS HERE: Same conditional logic as the display page.
-             scales: data.chartType === 'bar' ? {
-                 y: { beginAtZero: true, ticks: { color: '#333' } },
-                 x: { ticks: { color: '#333', stepSize: 1 } }
+             plugins: { 
+                legend: { display: false },
+                datalabels: {
+                    display: true,
+                    color: '#fff',
+                    anchor: 'center',
+                    align: 'center',
+                    font: { size: 16, weight: 'bold' },
+                    formatter: (value) => {
+                        if (value === 0) return null;
+                        if (data.resultsDisplay === 'number') return value;
+                        if (totalVotes === 0) return '0%';
+                        return `${(value / totalVotes * 100).toFixed(0)}%`;
+                    }
+                }
+             },
+             scales: data.chartType === 'bar' ? { 
+                 y: { display: false }, // Hiding y-axis as we now have an HTML legend
+                 x: { ticks: { display: false }, grid: { display: false } }
              } : {}
         }
     });

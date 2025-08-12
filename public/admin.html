@@ -3,131 +3,165 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
-    <!-- Libraries for Charts and QR Codes -->
+    <title>Live Poll | Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="css/core.css">
+    <link rel="stylesheet" href="css/app.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator/qrcode.js"></script>
+    <script src="js/qrcode.min.js"></script>
+
 </head>
 <body>
 
-    <!-- Login Section -->
-    <div id="login-section" class="container centered-container">
-        <div class="card">
-            <h2>Admin Login</h2>
+    <!-- AUTHENTICATION VIEW (Visible on load) -->
+    <div id="auth-section" class="centered-container">
+        <div class="card auth-card">
+            <h2 id="auth-title">Login</h2>
             <form id="login-form">
                 <input type="email" id="login-email" placeholder="Email" required autocomplete="email">
                 <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password">
-                <button type="submit" class="button">Login</button>
-                <p id="login-error" class="error-message"></p>
+                <button type="submit" class="button button-accent" id="auth-submit-btn">Login</button>
+                <p id="auth-error" class="error-message"></p>
             </form>
+            <p class="auth-toggle-text">
+                <span id="auth-toggle-prompt">No account?</span>
+                <a href="#" id="auth-toggle-link">Create one</a>
+            </p>
         </div>
     </div>
 
-    <!-- Main Dashboard (Hidden by default) -->
+    <!-- MAIN DASHBOARD (Hidden on load) -->
     <div id="dashboard-section" class="admin-container hidden">
-        <!-- Sidebar for Games -->
         <aside id="sidebar" class="sidebar">
             <div class="sidebar-header">
-                <h2>LiveVoter</h2>
+                <h2>Live Poll</h2>
                 <button id="logout-button" class="button-secondary button-small">Logout</button>
             </div>
             <div class="sidebar-content">
-                <h3><span class="emoji">🎮</span> Games</h3>
-                <form id="create-game-form">
-                    <input type="text" id="game-title" placeholder="New Game Title" required>
-                    <button type="submit" class="button">Create Game</button>
-                </form>
-                <div id="games-list" class="item-list"></div>
+                <button id="open-create-poll-modal-btn" class="button button-accent new-poll-btn">
+                    <i class="fa-solid fa-plus"></i> New Poll
+                </button>
+                <h3>My Polls</h3>
+                <div id="polls-list" class="item-list"></div>
             </div>
         </aside>
 
-        <!-- Main Content Area -->
         <main class="main-content">
             <header class="main-header">
-                <button id="mobile-menu-btn" class="mobile-menu-btn button-secondary">Menu</button>
-                <div class="main-header-game-info initially-hidden">
-                    <h1 id="main-game-title"></h1>
-                </div>
-                <div class="header-actions initially-hidden">
-                    <button id="reset-game-button" class="button-secondary">Reset Votes</button>
-                    <button id="delete-game-button" class="button end-btn">Delete Game</button>
+                <button id="mobile-menu-btn" class="mobile-menu-btn"><i class="fa-solid fa-bars"></i></button>
+                <div id="header-info" class="header-info hidden">
+                    <h1 id="main-poll-title"></h1>
+                    <div class="header-actions">
+                        <!-- *** MODIFIED BUTTONS FOR RESPONSIVENESS *** -->
+                        <button id="reset-poll-button" class="button-secondary">
+                            <i class="fa-solid fa-arrows-rotate"></i>
+                            <span class="btn-text">Reset Votes</span>
+                            <span class="btn-text-short">Reset</span>
+                        </button>
+                        <button id="delete-poll-button" class="button-danger">
+                            <i class="fa-solid fa-trash-can"></i>
+                            <span class="btn-text">Delete Poll</span>
+                            <span class="btn-text-short">Delete</span>
+                        </button>
+                    </div>
                 </div>
             </header>
 
-            <!-- Initial State: Shown when no game is selected -->
-            <div id="initial-state" class="centered-container">
+            <div id="initial-state" class="centered-content">
                 <div class="placeholder-text-lg">
-                    <span class="emoji initial-prompt-emoji">👈</span>
-                    <h2>Select or Create a Game</h2>
-                    <p>Choose a game from the sidebar to begin.</p>
+                    <h2>Select or Create a Poll</h2>
+                    <p>Get started by creating a new poll from the sidebar.</p>
                 </div>
             </div>
 
-            <!-- Game Dashboard: Shown when a game is selected -->
-            <div id="game-dashboard" class="hidden">
-
-                <!-- Tabs for navigation within a game -->
+            <div id="poll-dashboard" class="hidden">
                 <div class="tabs">
-                    <button class="tab-button active" data-tab="live">🔴 Live Control</button>
-                    <button class="tab-button" data-tab="questions">📝 Questions</button>
-                    <button class="tab-button" data-tab="results">📊 Results</button>
+                    <button class="tab-button active" data-tab="live">Live</button>
+                    <button class="tab-button" data-tab="questions">Questions</button>
+                    <button class="tab-button" data-tab="results">Results</button>
                 </div>
 
-                <!-- Tab Content: Live Control -->
                 <div id="tab-content-live" class="tab-content active">
-                     <div class="mission-control-grid">
-                        <!-- Left Column: Audience Interaction -->
-                        <div class="control-panel audience-panel">
-                            <h3>Audience</h3>
-                            <div id="qr-code-container" class="qr-container-admin"></div>
-                            <button id="copy-join-link-btn" class="button-secondary">
-                                <span class="emoji">🔗</span> Copy Join Link
-                            </button>
-                            <a href="#" target="_blank" id="open-display-btn" class="button">
-                                <span class="emoji">🖥️</span> Open Projector View
-                            </a>
+                    <div class="interaction-strip">
+                        <div class="interaction-item">
+                            <label>QR Code</label>
+                            <button id="download-qr-btn" class="button"><i class="fa-solid fa-qrcode"></i> Download QR</button>
                         </div>
-                        
-                        <!-- Right Column: Show Running -->
-                        <div class="show-running-column">
-                            <!-- Panel 2: Question Flow -->
-                            <div class="control-panel question-flow-panel">
-                                 <h3>Question Flow</h3>
-                                 <button id="show-lobby-btn" class="button button-secondary">Show Lobby & QR Code</button>
-                                 <div id="live-questions-list" class="live-questions-list"></div>
+                        <div class="interaction-item">
+                            <label>Join Link</label>
+                            <button id="copy-join-link-btn" class="button"><i class="fa-solid fa-link"></i> Copy Link</button>
+                        </div>
+                        <div class="interaction-item">
+                            <label>Projector View</label>
+                            <a href="#" target="_blank" id="open-display-btn" class="button"><i class="fa-solid fa-desktop"></i> Open Display</a>
+                        </div>
+                    </div>
+                    
+                    <div class="live-main-grid">
+                        <div class="control-column">
+                            <h3>Control Flow</h3>
+                            <div class="control-panel">
+                                <button id="show-lobby-btn" class="button button-secondary show-lobby-btn">
+                                    <i class="fa-solid fa-house-user"></i> Show Lobby Screen
+                                </button>
+                                <div id="live-questions-list" class="live-questions-list"></div>
                             </div>
-                            <!-- Panel 3: Live Preview -->
-                            <div class="control-panel preview-panel">
-                                 <h3>Live Preview</h3>
-                                 <div class="preview-wrapper">
-                                    <div id="preview-container">
-                                        <iframe id="live-preview-iframe" src="about:blank" width="1280" height="720"></iframe>
-                                    </div>
-                                 </div>
+                        </div>
+                        <div class="preview-column">
+                            <h3>Live Preview</h3>
+                            <div class="preview-wrapper">
+                                <iframe id="live-preview-iframe" src="about:blank"></iframe>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Tab Content: Questions & Editor -->
                 <div id="tab-content-questions" class="tab-content">
-                    <div id="questions-list-container">
-                        <!-- Questions and the inline editor will be rendered here by JS -->
+                    <div class="questions-header">
+                        <h3>Questions</h3>
+                        <button id="add-question-btn" class="button"><i class="fa-solid fa-plus"></i> Add Question</button>
                     </div>
+                    <div id="questions-list-container"></div>
                 </div>
 
-                <!-- Tab Content: Analytics/Results -->
                 <div id="tab-content-results" class="tab-content">
-                    <div id="analytics-container" class="analytics-grid">
-                        <!-- Analytics will be populated by JS -->
-                    </div>
+                     <div id="analytics-container" class="analytics-grid"></div>
                 </div>
             </div>
         </main>
-    </div>
 
+        <!-- MODALS -->
+        <div id="modal-backdrop" class="hidden">
+            <div id="create-poll-modal" class="modal-container hidden">
+                <div class="modal-header">
+                    <h2>Create a New Poll</h2>
+                    <button class="close-modal-btn" data-close-modal><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="modal-content">
+                    <form id="create-poll-form">
+                        <label for="poll-title-input">Poll Title</label>
+                        <input type="text" id="poll-title-input" placeholder="e.g., Q2 All-Hands Meeting" required>
+                        <div class="modal-footer">
+                            <button type="button" class="button-secondary" data-close-modal>Cancel</button>
+                            <button type="submit" class="button button-accent">Create Poll</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <div id="question-editor-modal" class="modal-container hidden">
+                <div class="modal-header">
+                    <h2 id="question-editor-title">Create Question</h2>
+                    <button class="close-modal-btn" data-close-modal><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="modal-content">
+                    <form id="question-editor-form"></form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="js/qrcode.min.js"></script>
     <script type="module" src="js/admin.js"></script>
 </body>
 </html>

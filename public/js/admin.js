@@ -1,459 +1,424 @@
-import { db, auth, doc, collection, addDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, onAuthStateChanged, signInWithEmailAndPassword, signOut, writeBatch } from './app.js';
+import { initAuth, logout } from './admin/auth.js';
+import * as ui from './admin/ui.js';
+import * as store from './admin/firestore.js';
 
-// --- DOM Elements ---
-const loginSection = document.getElementById('login-section');
-const dashboardSection = document.getElementById('dashboard-section');
-const logoutButton = document.getElementById('logout-button');
-const createGameForm = document.getElementById('create-game-form');
-const gamesList = document.getElementById('games-list');
-const initialState = document.getElementById('initial-state');
-const gameDashboard = document.getElementById('game-dashboard');
-const mainGameTitle = document.getElementById('main-game-title');
-const resetGameButton = document.getElementById('reset-game-button');
-const deleteGameButton = document.getElementById('delete-game-button');
-const questionsListContainer = document.getElementById('questions-list-container');
-const analyticsContainer = document.getElementById('analytics-container');
-const tabs = document.querySelectorAll('.tab-button');
-const tabContents = document.querySelectorAll('.tab-content');
+// --- STATE & CONFIG ---
+let state = {
+    currentUserId: null,
+    selectedPollId: null,
+    currentPollData: null,
+    questions: [],
+    unsubscribePolls: null,
+    unsubscribePoll: null,
+    unsubscribeQuestions: null,
+    activeCharts: {}
+};
 
-// Mission Control Elements
-const qrCodeContainer = document.getElementById('qr-code-container');
-const copyJoinLinkBtn = document.getElementById('copy-join-link-btn');
-const openDisplayBtn = document.getElementById('open-display-btn');
-const showLobbyBtn = document.getElementById('show-lobby-btn');
-const liveQuestionsList = document.getElementById('live-questions-list');
-const previewWrapper = document.querySelector('.preview-wrapper');
-const previewContainer = document.getElementById('preview-container');
-const livePreviewIframe = document.getElementById('live-preview-iframe');
-const sidebar = document.getElementById('sidebar');
-const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+const PRESET_COLORS = ['#EF4444', '#F97316', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#FBBF24'];
 
-
-// --- State Variables ---
-let selectedGameId = null;
-let questions = []; 
-let activeCharts = {}; 
-let unsubscribeGames = null;
-let unsubscribeGame = null;
-let unsubscribeQuestions = null;
-let openEditorElement = null;
-let previewScaler = null;
-
-
-// --- AUTHENTICATION ---
-onAuthStateChanged(auth, user => {
-    if (user) {
-        dashboardSection.classList.remove('hidden');
-        loginSection.classList.add('hidden');
-        listenForGames();
-    } else {
-        dashboardSection.classList.add('hidden');
-        loginSection.classList.remove('hidden');
-        if (previewScaler) previewScaler.disconnect();
-        if (unsubscribeGames) unsubscribeGames();
-        if (unsubscribeGame) unsubscribeGame();
-        if (unsubscribeQuestions) unsubscribeQuestions();
-        showInitialState();
-    }
-});
-
-document.getElementById('login-form').addEventListener('submit', async e => {
-    e.preventDefault();
-    document.getElementById('login-error').textContent = '';
-    try {
-        await signInWithEmailAndPassword(auth, e.target['login-email'].value, e.target['login-password'].value);
-    } catch (error) {
-        document.getElementById('login-error').textContent = "Invalid email or password.";
-    }
-});
-
-logoutButton.addEventListener('click', () => signOut(auth));
-
-
-// --- UI HELPERS ---
-function showInitialState() {
-    initialState.classList.remove('hidden');
-    gameDashboard.classList.add('hidden');
-    selectedGameId = null;
-    document.querySelectorAll('#games-list .list-item').forEach(el => el.classList.remove('selected'));
-    sidebar.classList.remove('open');
-    // Hide game-specific header elements
-    document.querySelector('.main-header-game-info').classList.add('initially-hidden');
-    document.querySelector('.header-actions').classList.add('initially-hidden');
+// --- INITIALIZATION ---
+function onLogin(uid) {
+    state.currentUserId = uid;
+    initDashboard();
+    state.unsubscribePolls = store.listenForPolls(uid, renderPollsList);
 }
 
-function switchTab(tabName) {
-    tabs.forEach(tab => tab.classList.toggle('active', tab.dataset.tab === tabName));
-    tabContents.forEach(content => {
-        content.classList.toggle('active', content.id === `tab-content-${tabName}`);
+function onLogout() {
+    state.currentUserId = null;
+    if (state.unsubscribePolls) state.unsubscribePolls();
+    if (state.unsubscribePoll) state.unsubscribePoll();
+    if (state.unsubscribeQuestions) state.unsubscribeQuestions();
+    Object.values(state.activeCharts).forEach(chart => chart.destroy());
+    ui.showInitialState();
+    ui.disconnectPreviewScaler();
+}
+
+function initDashboard() {
+    document.getElementById('logout-button').addEventListener('click', logout);
+    document.getElementById('open-create-poll-modal-btn').addEventListener('click', () => ui.openModal(document.getElementById('create-poll-modal')));
+    document.getElementById('modal-backdrop').addEventListener('click', (e) => {
+        if (e.target === document.getElementById('modal-backdrop') || e.target.closest('[data-close-modal]')) ui.closeModal();
     });
-}
-
-tabs.forEach(tab => {
-    tab.addEventListener('click', (e) => switchTab(e.target.dataset.tab));
-});
-
-
-// --- GAME MANAGEMENT ---
-function listenForGames() {
-    if (unsubscribeGames) unsubscribeGames();
-    const gamesRef = collection(db, 'games');
-    unsubscribeGames = onSnapshot(gamesRef, snapshot => {
-        gamesList.innerHTML = '';
-        const games = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        games.sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
-        games.forEach(game => renderGameListItem(game.id, game));
+    document.getElementById('add-question-btn').addEventListener('click', () => openQuestionEditor(null));
+    document.getElementById('create-poll-form').addEventListener('submit', handleCreatePoll);
+    document.getElementById('delete-poll-button').addEventListener('click', handleDeletePoll);
+    document.getElementById('reset-poll-button').addEventListener('click', handleResetPoll);
+    document.querySelectorAll('.tab-button').forEach(tab => tab.addEventListener('click', (e) => ui.switchTab(e.target.dataset.tab)));
+    document.getElementById('mobile-menu-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.getElementById('sidebar').classList.toggle('open');
     });
-}
-
-function renderGameListItem(id, data) {
-    const gameEl = document.createElement('div');
-    gameEl.className = 'list-item';
-    gameEl.innerHTML = `<span>${data.title}</span>`;
-    gameEl.dataset.id = id;
-    if (id === selectedGameId) gameEl.classList.add('selected');
-    gameEl.addEventListener('click', () => selectGame(id));
-    gamesList.appendChild(gameEl);
-}
-
-createGameForm.addEventListener('submit', async e => {
-    e.preventDefault();
-    const title = e.target['game-title'].value.trim();
-    if (!title) return;
-    
-    const newGameRef = await addDoc(collection(db, 'games'), {
-        title: title,
-        createdAt: new Date(),
-        currentQuestionId: null,
+    document.body.addEventListener('click', (e) => {
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && !e.target.closest('.mobile-menu-btn')) {
+            sidebar.classList.remove('open');
+        }
     });
-    createGameForm.reset();
-    selectGame(newGameRef.id);
-});
+    document.getElementById('download-qr-btn').addEventListener('click', handleDownloadQR);
+    document.getElementById('copy-join-link-btn').addEventListener('click', handleCopyLink);
+}
 
-function selectGame(id) {
-    if (selectedGameId === id) {
-        sidebar.classList.remove('open'); // Close sidebar on mobile if same game is selected
+// --- RENDER FUNCTIONS ---
+function renderPollsList(polls) {
+    const pollsListEl = document.getElementById('polls-list');
+    if (!pollsListEl) return;
+    pollsListEl.innerHTML = '';
+    if (polls.length === 0) {
+        pollsListEl.innerHTML = '<p class="no-items-msg">Create your first poll!</p>';
         return;
     }
-    selectedGameId = id;
-
-    document.querySelectorAll('#games-list .list-item').forEach(el => {
-        el.classList.toggle('selected', el.dataset.id === id);
-    });
-
-    initialState.classList.add('hidden');
-    gameDashboard.classList.remove('hidden');
-    // Show game-specific header elements
-    document.querySelector('.main-header-game-info').classList.remove('initially-hidden');
-    document.querySelector('.header-actions').classList.remove('initially-hidden');
-    
-    switchTab('live');
-    sidebar.classList.remove('open');
-
-    if (unsubscribeGame) unsubscribeGame();
-    if (unsubscribeQuestions) unsubscribeQuestions();
-
-    unsubscribeGame = onSnapshot(doc(db, 'games', id), (doc) => {
-        if (!doc.exists()) {
-            alert('This game was deleted.');
-            showInitialState();
-            return;
-        }
-        const gameData = doc.data();
-        mainGameTitle.textContent = gameData.title;
-        renderLiveControls(gameData);
-    });
-
-    listenForQuestions(id);
-    const displayUrl = `/display.html?game=${id}`;
-    openDisplayBtn.href = displayUrl;
-    livePreviewIframe.src = displayUrl;
-    initPreviewScaler();
-}
-
-deleteGameButton.addEventListener('click', async () => {
-    if (!selectedGameId) return;
-    if (confirm("DANGER: Are you sure you want to permanently delete this game and all of its questions? This action cannot be undone.")) {
-        try {
-            const questionsRef = collection(db, 'games', selectedGameId, 'questions');
-            const questionsSnapshot = await getDocs(questionsRef);
-            const batch = writeBatch(db);
-            questionsSnapshot.forEach(doc => batch.delete(doc.ref));
-            await batch.commit();
-            
-            await deleteDoc(doc(db, 'games', selectedGameId));
-            showInitialState();
-        } catch (error) {
-            console.error("Error deleting game: ", error);
-            alert("Could not delete the game. Please try again.");
-        }
-    }
-});
-
-resetGameButton.addEventListener('click', async () => {
-    if (!selectedGameId) return;
-    if (confirm("Are you sure you want to reset all votes for ALL questions in this game to zero?")) {
-        const batch = writeBatch(db);
-        questions.forEach(q => {
-            const newVoteCounts = Object.fromEntries(q.options.map(opt => [opt.id, 0]));
-            const questionRef = doc(db, 'games', selectedGameId, 'questions', q.id);
-            batch.update(questionRef, { status: 'draft', voteCounts: newVoteCounts });
-        });
-        
-        const gameRef = doc(db, 'games', selectedGameId);
-        batch.update(gameRef, { currentQuestionId: null });
-
-        await batch.commit();
-        alert("Game votes have been reset.");
-        switchTab('live');
-    }
-});
-
-// --- QUESTION MANAGEMENT (INLINE) ---
-function listenForQuestions(gameId) {
-    const questionsRef = collection(db, 'games', gameId, 'questions');
-    unsubscribeQuestions = onSnapshot(questionsRef, snapshot => {
-        questions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        renderQuestionsList();
-        renderAnalyticsTab();
-        getDoc(doc(db, 'games', gameId)).then(gameDoc => {
-             if(gameDoc.exists()) renderLiveControls(gameDoc.data());
-        });
+    polls.forEach(poll => {
+        const pollEl = document.createElement('div');
+        pollEl.className = 'list-item';
+        pollEl.innerHTML = `<span><i class="fa-solid fa-square-poll-vertical fa-fw"></i> ${poll.title}</span>`;
+        pollEl.dataset.id = poll.id;
+        if (poll.id === state.selectedPollId) pollEl.classList.add('selected');
+        pollEl.addEventListener('click', () => selectPoll(poll.id));
+        pollsListEl.appendChild(pollEl);
     });
 }
 
 function renderQuestionsList() {
-    closeOpenEditor();
-    questionsListContainer.innerHTML = '';
-
-    questions.forEach((q, index) => {
-        const qCard = document.createElement('div');
-        qCard.className = 'question-card';
-        qCard.dataset.id = q.id;
-        qCard.innerHTML = `
-            <div class="question-card-header">
-                <span class="q-card-index">${index + 1}.</span>
-                <span class="q-card-text">${q.questionText}</span>
-                <div class="q-actions">
-                    <button class="button-small edit-btn">Edit</button>
-                    <button class="button-small delete-btn">Delete</button>
-                </div>
-            </div>
-            <div class="editor-container"></div>
-        `;
-        qCard.querySelector('.edit-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleEditor(qCard.querySelector('.editor-container'), q); });
-        qCard.querySelector('.delete-btn').addEventListener('click', (e) => { e.stopPropagation(); deleteQuestion(q.id); });
-        questionsListContainer.appendChild(qCard);
+    const container = document.getElementById('questions-list-container');
+    container.innerHTML = '';
+    if (state.questions.length === 0) {
+        container.innerHTML = '<p class="no-items-msg">No questions yet. Add one to get started!</p>';
+        return;
+    }
+    state.questions.forEach((q, index) => {
+        const card = document.createElement('div');
+        card.className = 'question-card';
+        card.innerHTML = `
+            <span class="q-card-index">${index + 1}.</span>
+            <span class="q-card-text">${q.questionText}</span>
+            <div class="q-actions">
+                <button class="edit-btn" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
+                <button class="delete-btn" title="Delete"><i class="fa-solid fa-trash-can"></i></button>
+            </div>`;
+        card.querySelector('.edit-btn').addEventListener('click', () => openQuestionEditor(q));
+        card.querySelector('.delete-btn').addEventListener('click', () => handleDeleteQuestion(q.id));
+        container.appendChild(card);
     });
-
-    const addQuestionCard = document.createElement('div');
-    addQuestionCard.className = 'question-card add-new';
-    addQuestionCard.innerHTML = `<span>+ Add a New Question</span>`;
-    addQuestionCard.addEventListener('click', () => {
-        const newCard = document.createElement('div');
-        newCard.className = 'question-card';
-        questionsListContainer.appendChild(newCard);
-        toggleEditor(newCard, null);
-        newCard.scrollIntoView({ behavior: 'smooth' });
-    });
-    questionsListContainer.appendChild(addQuestionCard);
 }
 
-function toggleEditor(container, questionData) {
-    if (openEditorElement && openEditorElement !== container) closeOpenEditor();
+function renderLiveControls() {
+    const container = document.getElementById('live-questions-list');
+    if (!state.selectedPollId || !state.currentPollData || !container) return;
+    container.innerHTML = '';
     
-    if (container.classList.contains('open')) {
-        closeOpenEditor();
-    } else {
-        openEditorElement = container;
-        container.innerHTML = createEditorForm(questionData);
-        container.classList.add('open');
-        container.querySelector('.cancel-btn').addEventListener('click', closeOpenEditor);
-        container.querySelector('.question-editor-form').addEventListener('submit', (e) => { e.preventDefault(); saveQuestion(e.target, questionData ? questionData.id : null); });
-        container.querySelector('.add-option-btn-inline').addEventListener('click', (e) => { const optionsDiv = e.target.previousElementSibling; addOptionInput(optionsDiv); });
-    }
-}
+    document.getElementById('show-lobby-btn').onclick = () => store.showLobby(state.currentUserId, state.selectedPollId);
 
-function closeOpenEditor() {
-    if (openEditorElement) {
-        if (!openEditorElement.closest('.question-card').dataset.id) { openEditorElement.closest('.question-card').remove(); }
-        else { openEditorElement.classList.remove('open'); openEditorElement.innerHTML = ''; }
-        openEditorElement = null;
-    }
-}
-
-function createEditorForm(data) {
-    const qText = data ? data.questionText : '';
-    const duration = data ? data.duration : 30;
-    const chartType = data ? data.chartType : 'bar';
-    const options = data ? data.options : [{text:'', color:'#4A90E2'}, {text:'', color:'#50E3C2'}];
-    let optionsHtml = options.map(opt => `
-        <div class="option-input-group">
-            <input type="text" value="${opt.text}" placeholder="Option Text" class="option-text" required>
-            <input type="color" value="${opt.color}" class="option-color">
-        </div>`).join('');
-
-    return `
-        <form class="question-editor-form">
-            <label>Question</label>
-            <input type="text" name="questionText" value="${qText}" required>
-            <label>Options (Max 4)</label>
-            <div class="options-container-inline">${optionsHtml}</div>
-            <button type="button" class="button-tertiary add-option-btn-inline">Add Option</button>
-            <div class="form-grid-2">
-                <div>
-                    <label>Voting Time (s)</label>
-                    <input type="number" name="duration" value="${duration}" required>
-                </div>
-                <div>
-                    <label>Chart Type</label>
-                    <select name="chartType">
-                        <option value="bar" ${chartType === 'bar' ? 'selected' : ''}>Bar Chart</option>
-                        <option value="pie" ${chartType === 'pie' ? 'selected' : ''}>Pie Chart</option>
-                        <option value="doughnut" ${chartType === 'doughnut' ? 'selected' : ''}>doughnut Chart</option>
-                    </select>
-                </div>
-            </div>
-            <div class="form-actions">
-                <button type="button" class="button-secondary cancel-btn">Cancel</button>
-                <button type="submit" class="button">Save Question</button>
-            </div>
-        </form>
-    `;
-}
-
-
-function addOptionInput(container) {
-    if (container.children.length >= 4) return alert("A maximum of 4 options are allowed.");
-    const div = document.createElement('div');
-    div.className = 'option-input-group';
-    div.innerHTML = `<input type="text" value="" placeholder="Option Text" class="option-text" required> <input type="color" value="#3498db" class="option-color">`;
-    container.appendChild(div);
-}
-
-async function saveQuestion(form, questionId) {
-    const options = Array.from(form.querySelectorAll('.option-input-group')).map((group, index) => ({ id: `opt${index + 1}`, text: group.querySelector('.option-text').value.trim(), color: group.querySelector('.option-color').value })).filter(opt => opt.text);
-    if (options.length < 2) return alert("Please define at least 2 options.");
-    const questionData = { questionText: form.questionText.value.trim(), options, duration: parseInt(form.duration.value) || 30, chartType: form.chartType.value };
-    if (questionId) {
-        await updateDoc(doc(db, 'games', selectedGameId, 'questions', questionId), questionData);
-    } else {
-        questionData.status = 'draft';
-        questionData.voteCounts = Object.fromEntries(options.map(opt => [opt.id, 0]));
-        await addDoc(collection(db, 'games', selectedGameId, 'questions'), questionData);
-    }
-    closeOpenEditor();
-}
-
-async function deleteQuestion(questionId) { if (confirm("Are you sure you want to delete this question?")) await deleteDoc(doc(db, 'games', selectedGameId, 'questions', questionId)); }
-
-// --- MISSION CONTROL ---
-function renderLiveControls(gameData) {
-    if (!selectedGameId || !gameData) return;
-
-    generateQRCode(selectedGameId);
-    copyJoinLinkBtn.onclick = () => { navigator.clipboard.writeText(`${window.location.origin}/vote.html?game=${selectedGameId}`); copyJoinLinkBtn.textContent = 'Copied!'; setTimeout(() => { copyJoinLinkBtn.innerHTML = `<span class="emoji">🔗</span> Copy Join Link`; }, 2000); };
-    showLobbyBtn.onclick = showLobby;
-
-    liveQuestionsList.innerHTML = '';
-    questions.forEach(q => {
-        const isCurrent = gameData.currentQuestionId === q.id;
+    state.questions.forEach(q => {
+        const isCurrent = state.currentPollData.currentQuestionId === q.id;
         const isRevealed = q.status === 'results_revealed';
         let statusText = 'Ready';
-        if(isCurrent && isRevealed) statusText = 'Results Shown';
-        else if(isCurrent) statusText = 'Live';
-        
-        const pushDisabled = isCurrent && !isRevealed;
-        const revealDisabled = isRevealed;
-
+        if (isCurrent && isRevealed) statusText = 'Results Shown';
+        else if (isCurrent) statusText = 'Live';
         const qEl = document.createElement('div');
         qEl.className = `live-question-item ${isCurrent ? 'active' : ''}`;
         qEl.innerHTML = `
             <div class="live-q-status ${statusText.toLowerCase().replace(' ','-')}">${statusText}</div>
             <span class="live-q-text">${q.questionText}</span>
             <div class="live-q-buttons">
-                <button class="button-small push-btn" data-q-id="${q.id}" ${pushDisabled ? 'disabled' : ''}>Push</button>
-                <button class="button-small reveal-btn" data-q-id="${q.id}" ${revealDisabled ? 'disabled' : ''}>Reveal</button>
+                <button class="button-small push-btn" data-q-id="${q.id}" ${isCurrent && !isRevealed ? 'disabled' : ''}>Push</button>
+                <button class="button-small reveal-btn" data-q-id="${q.id}" ${!isCurrent || isRevealed ? 'disabled' : ''}>Reveal</button>
             </div>`;
-        liveQuestionsList.appendChild(qEl);
+        qEl.querySelector('.push-btn').addEventListener('click', (e) => store.pushQuestion(state.currentUserId, state.selectedPollId, e.target.dataset.qId));
+        qEl.querySelector('.reveal-btn').addEventListener('click', (e) => store.revealResults(state.currentUserId, state.selectedPollId, e.target.dataset.qId));
+        container.appendChild(qEl);
     });
-    
-    document.querySelectorAll('.push-btn').forEach(btn => btn.addEventListener('click', pushQuestion));
-    document.querySelectorAll('.reveal-btn').forEach(btn => btn.addEventListener('click', revealResults));
 }
 
-function generateQRCode(gameId) { qrCodeContainer.innerHTML = ''; const qr = qrcode(0, 'L'); qr.addData(`${window.location.origin}/vote.html?game=${gameId}`); qr.make(); qrCodeContainer.innerHTML = qr.createImgTag(4, 4); }
-async function showLobby() { if (!selectedGameId) return; await updateDoc(doc(db, 'games', selectedGameId), { currentQuestionId: null }); }
-
-async function pushQuestion(e) {
-    const questionId = e.target.dataset.qId;
-    const batch = writeBatch(db);
-    batch.update(doc(db, 'games', selectedGameId), { currentQuestionId: questionId });
-    batch.update(doc(db, 'games', selectedGameId, 'questions', questionId), { status: 'draft' });
-    await batch.commit();
-}
-
-async function revealResults(e) {
-    const questionId = e.target.dataset.qId;
-    const batch = writeBatch(db);
-    batch.update(doc(db, 'games', selectedGameId), { currentQuestionId: questionId });
-    batch.update(doc(db, 'games', selectedGameId, 'questions', questionId), { status: 'results_revealed' });
-    await batch.commit();
-}
-
-function initPreviewScaler() {
-    if (previewScaler) previewScaler.disconnect();
-    const iframe = livePreviewIframe;
-    const iframeWidth = parseInt(iframe.width);
-    const iframeHeight = parseInt(iframe.height);
-
-    const updateScale = () => {
-        const containerWidth = previewWrapper.offsetWidth;
-        if (containerWidth > 0) {
-            const scale = containerWidth / iframeWidth;
-            iframe.style.transform = `scale(${scale})`;
-            previewContainer.style.height = `${iframeHeight * scale}px`;
-        }
-    };
-    previewScaler = new ResizeObserver(updateScale);
-    previewScaler.observe(previewWrapper);
-    updateScale();
-}
-
-// --- ANALYTICS TAB ---
+// *** FIXED FUNCTION ***
 function renderAnalyticsTab() {
-    Object.values(activeCharts).forEach(chart => chart.destroy());
-    activeCharts = {};
-    const questionsWithVotes = questions.filter(q => Object.values(q.voteCounts || {}).reduce((sum, count) => sum + count, 0) > 0);
+    Object.values(state.activeCharts).forEach(chart => chart.destroy());
+    state.activeCharts = {};
+
+    const analyticsContainer = document.getElementById('analytics-container');
+    if (!analyticsContainer) return;
+    
+    const questionsWithVotes = state.questions.filter(q => 
+        q.voteCounts && Object.values(q.voteCounts).some(count => count > 0)
+    );
+
     if (questionsWithVotes.length === 0) {
-        analyticsContainer.innerHTML = '<p class="placeholder-text-lg">No results to show yet. Push a question and gather some votes first!</p>';
+        analyticsContainer.innerHTML = '<div class="placeholder-text-lg" style="text-align: center;"><h2>No Results Yet</h2><p>Push a question live and collect some votes to see the analytics.</p></div>';
         return;
     }
-    analyticsContainer.innerHTML = '';
+
+    analyticsContainer.innerHTML = ''; 
+
     questionsWithVotes.forEach(q => {
         const totalVotes = Object.values(q.voteCounts || {}).reduce((sum, count) => sum + count, 0);
+
+        const optionsHtml = q.options.map(opt => {
+            const votes = q.voteCounts[opt.id] || 0;
+            const percentage = totalVotes > 0 ? ((votes / totalVotes) * 100).toFixed(0) : 0;
+            return `
+                <div class="analytics-option-row">
+                    <div class="color-legend" style="background-color: ${opt.color};"></div>
+                    <div class="option-text">${opt.text}</div>
+                    <div class="option-percent">${percentage}%</div>
+                    <div class="option-votes">(${votes} votes)</div>
+                </div>
+            `;
+        }).join('');
+
         const card = document.createElement('div');
         card.className = 'analytics-card';
-        card.innerHTML = `<h4>${q.questionText}</h4><p>Total Votes: <strong>${totalVotes}</strong></p><div class="analytics-chart-container"><canvas id="chart-${q.id}"></canvas></div>`;
+        card.innerHTML = `
+            <div class="analytics-card-header">
+                <h4>${q.questionText}</h4>
+                <div class="analytics-stats">
+                    <strong>${totalVotes}</strong>
+                    Total Votes
+                </div>
+            </div>
+            <div class="analytics-card-body">
+                <div class="analytics-option-list">
+                    ${optionsHtml}
+                </div>
+                <div class="analytics-chart-container">
+                    <canvas id="chart-${q.id}"></canvas>
+                </div>
+            </div>
+        `;
+
         analyticsContainer.appendChild(card);
+
         const ctx = document.getElementById(`chart-${q.id}`).getContext('2d');
         if (ctx) {
-            activeCharts[q.id] = new Chart(ctx, { type: 'bar', data: { labels: q.options.map(opt => opt.text), datasets: [{ label: 'Votes', data: q.options.map(opt => q.voteCounts[opt.id] || 0), backgroundColor: q.options.map(opt => opt.color) }] }, options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } } } });
+            const isPieType = q.chartType === 'pie' || q.chartType === 'doughnut';
+            
+            state.activeCharts[q.id] = new Chart(ctx, {
+                type: q.chartType || 'bar',
+                data: {
+                    labels: q.options.map(opt => opt.text),
+                    datasets: [{
+                        data: q.options.map(opt => q.voteCounts[opt.id] || 0),
+                        backgroundColor: q.options.map(opt => opt.color),
+                        borderWidth: isPieType ? 2 : 0,
+                        borderColor: isPieType ? 'var(--dark-bg)' : undefined
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: !isPieType ? 'y' : 'x',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false },
+                        datalabels: { display: false }
+                    },
+                    scales: !isPieType ? {
+                        y: { display: false, grid: { display: false } },
+                        x: { display: false, grid: { display: false } }
+                    } : {}
+                }
+            });
         }
     });
 }
 
-// --- MOBILE SIDEBAR ---
-mobileMenuBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    sidebar.classList.toggle('open');
-});
 
-document.body.addEventListener('click', (e) => {
-    if (sidebar.classList.contains('open') && !sidebar.contains(e.target)) {
-        sidebar.classList.remove('open');
+// --- EVENT HANDLERS & ACTIONS ---
+function selectPoll(id) {
+    if (state.selectedPollId === id) return;
+    state.selectedPollId = id;
+    ui.updatePollSelectionUI(id);
+    if (state.unsubscribePoll) state.unsubscribePoll();
+    if (state.unsubscribeQuestions) state.unsubscribeQuestions();
+    state.unsubscribePoll = store.listenForSinglePoll(state.currentUserId, id, doc => {
+        if (!doc.exists()) { ui.showInitialState(); return; }
+        state.currentPollData = doc.data();
+        ui.updatePollHeader(state.currentPollData.title);
+        renderLiveControls();
+    });
+    state.unsubscribeQuestions = store.listenForQuestions(state.currentUserId, id, questions => {
+        state.questions = questions;
+        renderQuestionsList();
+        renderAnalyticsTab();
+        renderLiveControls();
+    });
+    ui.setDisplayLinks(state.currentUserId, id);
+    ui.initPreviewScaler();
+}
+
+async function handleCreatePoll(e) {
+    e.preventDefault();
+    const title = e.target['poll-title-input'].value.trim();
+    if (title) {
+        await store.createPoll(state.currentUserId, title);
+        ui.closeModal();
     }
-});
+}
 
+async function handleDeletePoll() {
+    if (!state.selectedPollId || !state.currentUserId) return;
+    if (confirm("DANGER: Are you sure you want to permanently delete this poll and all its questions?")) {
+        await store.deletePoll(state.currentUserId, state.selectedPollId);
+        ui.showInitialState();
+    }
+}
 
-document.addEventListener('DOMContentLoaded', showInitialState);
+async function handleResetPoll() {
+    if (!state.selectedPollId || !state.currentUserId) return;
+    if (confirm("Are you sure you want to reset all votes for ALL questions in this poll?")) {
+        await store.resetPoll(state.currentUserId, state.selectedPollId, state.questions);
+        alert("Poll votes have been reset.");
+        ui.switchTab('live');
+    }
+}
+
+function openQuestionEditor(questionData) {
+    state.currentQuestionIdToEdit = questionData ? questionData.id : null;
+    document.getElementById('question-editor-title').textContent = questionData ? 'Edit Question' : 'Create Question';
+    const form = document.getElementById('question-editor-form');
+    form.innerHTML = createEditorFormHTML(questionData);
+    form.addEventListener('submit', handleSaveQuestion);
+    form.querySelector('.add-option-btn').addEventListener('click', () => addOptionInput(form));
+    form.querySelectorAll('.color-picker-wrapper').forEach(wrapper => {
+        wrapper.addEventListener('click', (e) => {
+            if (e.target.classList.contains('color-swatch')) {
+                const group = e.target.closest('.color-picker-wrapper');
+                group.querySelector('.color-swatch.selected')?.classList.remove('selected');
+                e.target.classList.add('selected');
+                group.querySelector('input[type="color"]').value = e.target.dataset.color;
+            }
+        });
+    });
+    ui.openModal(document.getElementById('question-editor-modal'));
+}
+
+function createEditorFormHTML(data) {
+    const qText = data ? data.questionText : '';
+    const duration = data ? data.duration : 30;
+    const chartType = data ? data.chartType : 'bar';
+    const resultsDisplay = data ? data.resultsDisplay : 'percentage';
+    const options = data ? data.options : [{text:'', color: PRESET_COLORS[0]}, {text:'', color: PRESET_COLORS[1]}];
+    let optionsHtml = options.map(opt => `
+        <div class="option-input-group">
+            <input type="text" value="${opt.text}" placeholder="Option Text" class="option-text" required>
+            <div class="color-picker-wrapper">
+                ${PRESET_COLORS.map(color => `<div class="color-swatch ${color === opt.color ? 'selected' : ''}" style="background-color: ${color};" data-color="${color}"></div>`).join('')}
+                <input type="color" value="${opt.color}" class="option-color">
+            </div>
+        </div>
+    `).join('');
+    return `
+        <label>Question</label>
+        <input type="text" name="questionText" value="${qText}" required placeholder="e.g., What's our next priority?">
+        <label>Options (Max 4)</label>
+        <div class="options-container">${optionsHtml}</div>
+        <button type="button" class="button button-secondary add-option-btn" style="margin-top: 5px; width: auto;"><i class="fa-solid fa-plus"></i> Add Option</button>
+        <div class="form-grid-3" style="margin-top: 25px;">
+            <div><label>Time (s)</label><input type="number" name="duration" value="${duration}" required></div>
+            <div><label>Chart Type</label><select name="chartType"><option value="bar" ${chartType === 'bar' ? 'selected' : ''}>Bar</option><option value="pie" ${chartType === 'pie' ? 'selected' : ''}>Pie</option><option value="doughnut" ${chartType === 'doughnut' ? 'selected' : ''}>Doughnut</option></select></div>
+            <div><label>Results Display</label><select name="resultsDisplay"><option value="percentage" ${resultsDisplay === 'percentage' ? 'selected' : ''}>Percentage</option><option value="number" ${resultsDisplay === 'number' ? 'selected' : ''}>Number</option></select></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="button-secondary" data-close-modal>Cancel</button>
+            <button type="submit" class="button button-accent">Save Question</button>
+        </div>
+    `;
+}
+
+function addOptionInput(form) {
+    const container = form.querySelector('.options-container');
+    if (container.children.length >= 4) { alert("A maximum of 4 options are allowed."); return; }
+    const newColor = PRESET_COLORS[container.children.length % PRESET_COLORS.length];
+    const div = document.createElement('div');
+    div.className = 'option-input-group';
+    div.innerHTML = `
+        <input type="text" value="" placeholder="Option Text" class="option-text" required>
+        <div class="color-picker-wrapper">
+            ${PRESET_COLORS.map(color => `<div class="color-swatch ${color === newColor ? 'selected' : ''}" style="background-color: ${color};" data-color="${color}"></div>`).join('')}
+            <input type="color" value="${newColor}" class="option-color">
+        </div>
+    `;
+    div.querySelector('.color-picker-wrapper').addEventListener('click', (e) => {
+        if (e.target.classList.contains('color-swatch')) {
+            const group = e.target.closest('.color-picker-wrapper');
+            group.querySelector('.color-swatch.selected')?.classList.remove('selected');
+            e.target.classList.add('selected');
+            group.querySelector('input[type="color"]').value = e.target.dataset.color;
+        }
+    });
+    container.appendChild(div);
+}
+
+async function handleSaveQuestion(e) {
+    e.preventDefault();
+    const form = e.target;
+    const options = Array.from(form.querySelectorAll('.option-input-group')).map((group, index) => ({
+        id: `opt${index + 1}`, text: group.querySelector('.option-text').value.trim(),
+        color: group.querySelector('.option-color').value
+    })).filter(opt => opt.text);
+    if (options.length < 2) { alert("Please define at least 2 options."); return; }
+    const questionData = { 
+        questionText: form.questionText.value.trim(), options, 
+        duration: parseInt(form.duration.value) || 30, 
+        chartType: form.chartType.value,
+        resultsDisplay: form.resultsDisplay.value
+    };
+    await store.saveQuestion(state.currentUserId, state.selectedPollId, state.currentQuestionIdToEdit, questionData);
+    ui.closeModal();
+}
+
+async function handleDeleteQuestion(questionId) {
+    if (confirm("Are you sure you want to delete this question?")) {
+        await store.deleteQuestion(state.currentUserId, state.selectedPollId, questionId);
+    }
+}
+
+function handleDownloadQR() {
+    if (!state.currentUserId || !state.selectedPollId) {
+        alert("Please select a poll first.");
+        return;
+    }
+
+    const tempContainer = document.createElement('div');
+    tempContainer.style.position = 'absolute';
+    tempContainer.style.top = '-9999px'; // Move it off-screen
+    document.body.appendChild(tempContainer);
+
+    const voteUrl = `${window.location.origin}/vote.html?user=${state.currentUserId}&poll=${state.selectedPollId}`;
+    new QRCode(tempContainer, {
+        text: voteUrl,
+        width: 256,
+        height: 256,
+        correctLevel: QRCode.CorrectLevel.H
+    });
+
+    setTimeout(() => {
+        const canvas = tempContainer.querySelector('canvas');
+        if (canvas) {
+            const link = document.createElement('a');
+            link.href = canvas.toDataURL('image/png');
+            link.download = `intera-poll-qr-${state.selectedPollId}.png`;
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } else {
+            alert("Could not generate QR code. Please try again.");
+        }
+        document.body.removeChild(tempContainer);
+    }, 100); // 100ms delay is usually sufficient
+}
+
+function handleCopyLink() {
+    if (!state.currentUserId || !state.selectedPollId) return;
+    const voteUrl = `${window.location.origin}/vote.html?user=${state.currentUserId}&poll=${state.selectedPollId}`;
+    navigator.clipboard.writeText(voteUrl).then(() => {
+        const btn = document.getElementById('copy-join-link-btn');
+        btn.innerHTML = `<i class="fa-solid fa-check"></i> Copied!`;
+        setTimeout(() => { btn.innerHTML = `<i class="fa-solid fa-link"></i> Copy Link`; }, 2000);
+    }).catch(err => {
+        alert("Failed to copy link.");
+        console.error('Copy failed', err);
+    });
+}
+
+// --- Start the app ---
+initAuth(onLogin, onLogout);
