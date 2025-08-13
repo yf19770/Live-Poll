@@ -7,7 +7,7 @@ import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, on
 // PASTE YOUR FIREBASE CONFIGURATION OBJECT HERE
 // Find this in your Firebase project settings
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
+ apiKey: "YOUR_API_KEY",
   authDomain: "YOUR_AUTH_DOMAIN",
   projectId: "YOUR_PROJECT_ID",
   storageBucket: "YOUR_STORAGE_BUCKET",

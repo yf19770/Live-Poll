@@ -88,27 +88,32 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // The /users path itself is only writable by the owner.
+    // The /users path is only writable by the owner and not publicly readable.
     match /users/{userId} {
       allow write: if request.auth.uid == userId;
 
       // The 'polls' subcollection
       match /polls/{pollId} {
-        // Allow a user to GET a single poll if they have the ID.
+        // Allow the public to GET a single poll, but not list them.
         allow get: if true;
+        // Allow the OWNER to perform any READ operation (get AND list).
+        allow read: if request.auth.uid == userId;
+        
+        // Allow the OWNER to write.
         allow write: if request.auth.uid == userId;
 
-        // The 'questions' subcollection
+        // The 'questions' subcollection (repeating the same pattern)
         match /questions/{questionId} {
           allow get: if true;
+          allow read: if request.auth.uid == userId;
           allow write: if request.auth.uid == userId;
 
           // The 'results' subcollection
           match /results/{resultDocId} {
-            // Allow a user to GET the results document if they know the path.
             allow get: if true;
+            allow read: if request.auth.uid == userId;
             
-            // Allow a user to UPDATE the results doc ONLY IF it's a valid vote.
+            // Allow an update only if it's a valid vote.
             allow update: if isValidVote();
 
             // Only the owner can create or delete the results document.
@@ -119,7 +124,6 @@ service cloud.firestore {
     }
   }
 
-  // This function validates an incoming vote to ensure it's legitimate.
   function isValidVote() {
     let beforeCounts = resource.data.counts;
     let afterCounts = request.resource.data.counts;
@@ -129,9 +133,7 @@ service cloud.firestore {
 
     // Rule 2: No options can be added or removed from the 'counts' map.
     let mapKeysUnchanged = beforeCounts.keys() == afterCounts.keys();
-    
-    
-    // The entire update is only valid if ALL these conditions are true.
+
     return docKeysUnchanged && mapKeysUnchanged;
   }
 }
