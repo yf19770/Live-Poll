@@ -1,6 +1,9 @@
 import { initAuth, logout } from './admin/auth.js';
 import * as ui from './admin/ui.js';
 import * as store from './admin/firestore.js';
+import { db } from './app.js';
+import { doc, getDoc } from './app.js';
+
 
 // --- STATE & CONFIG ---
 let state = {
@@ -33,6 +36,128 @@ function onLogout() {
     ui.disconnectPreviewScaler();
 }
 
+// --- CORE LOGIC (renderAnalyticsTab is the key change) ---
+
+// Fetches results from the single 'vote_counts' document for each question.
+async function renderAnalyticsTab() {
+    Object.values(state.activeCharts).forEach(chart => chart.destroy());
+    state.activeCharts = {};
+
+    const analyticsContainer = document.getElementById('analytics-container');
+    if (!analyticsContainer) return;
+
+    if (state.questions.length === 0) {
+        analyticsContainer.innerHTML = '<div class="placeholder-text-lg" style="text-align: center;"><h2>No Results Yet</h2><p>Add a question to see the analytics dashboard.</p></div>';
+        return;
+    }
+    
+    // Fetch all vote count documents concurrently
+    const votePromises = state.questions.map(q => {
+        const resultsRef = doc(db, 'users', state.currentUserId, 'polls', state.selectedPollId, 'questions', q.id, 'results', 'vote_counts');
+        return getDoc(resultsRef);
+    });
+
+    const resultsSnapshots = await Promise.all(votePromises);
+    
+    // Process the snapshots
+    const voteAggregates = {};
+    resultsSnapshots.forEach((snapshot, index) => {
+        const questionId = state.questions[index].id;
+        if (snapshot.exists()) {
+            voteAggregates[questionId] = snapshot.data().counts;
+        } else {
+            // If doc doesn't exist, initialize with zeros
+            voteAggregates[questionId] = Object.fromEntries(state.questions[index].options.map(opt => [opt.id, 0]));
+        }
+    });
+
+    const questionsWithVotes = state.questions.filter(q => 
+        voteAggregates[q.id] && Object.values(voteAggregates[q.id]).some(count => count > 0)
+    );
+
+    if (questionsWithVotes.length === 0) {
+        analyticsContainer.innerHTML = '<div class="placeholder-text-lg" style="text-align: center;"><h2>No Results Yet</h2><p>Push a question live and collect some votes to see the analytics.</p></div>';
+        return;
+    }
+
+    analyticsContainer.innerHTML = ''; 
+
+    questionsWithVotes.forEach(q => {
+        const voteCounts = voteAggregates[q.id];
+        const totalVotes = Object.values(voteCounts || {}).reduce((sum, count) => sum + count, 0);
+
+        const optionsHtml = q.options.map(opt => {
+            const votes = voteCounts[opt.id] || 0;
+            const percentage = totalVotes > 0 ? ((votes / totalVotes) * 100).toFixed(0) : 0;
+            return `
+                <div class="analytics-option-row">
+                    <div class="color-legend" style="background-color: ${opt.color};"></div>
+                    <div class="option-text">${opt.text}</div>
+                    <div class="option-percent">${percentage}%</div>
+                    <div class="option-votes">(${votes} votes)</div>
+                </div>
+            `;
+        }).join('');
+
+        const card = document.createElement('div');
+        card.className = 'analytics-card';
+        card.innerHTML = `
+            <div class="analytics-card-header">
+                <h4>${q.questionText}</h4>
+                <div class="analytics-stats">
+                    <strong>${totalVotes}</strong>
+                    Total Votes
+                </div>
+            </div>
+            <div class="analytics-card-body">
+                <div class="analytics-option-list">
+                    ${optionsHtml}
+                </div>
+                <div class="analytics-chart-container">
+                    <canvas id="chart-${q.id}"></canvas>
+                </div>
+            </div>
+        `;
+
+        analyticsContainer.appendChild(card);
+
+        const ctx = document.getElementById(`chart-${q.id}`).getContext('2d');
+        if (ctx) {
+            const isPieType = q.chartType === 'pie' || q.chartType === 'doughnut';
+            
+            state.activeCharts[q.id] = new Chart(ctx, {
+                type: q.chartType || 'bar',
+                data: {
+                    labels: q.options.map(opt => opt.text),
+                    datasets: [{
+                        data: q.options.map(opt => voteCounts[opt.id] || 0),
+                        backgroundColor: q.options.map(opt => opt.color),
+                        borderWidth: isPieType ? 2 : 0,
+                        borderColor: isPieType ? 'var(--dark-bg)' : undefined
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: !isPieType ? 'y' : 'x',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false },
+                        datalabels: { display: false }
+                    },
+                    scales: !isPieType ? {
+                        y: { display: false, grid: { display: false } },
+                        x: { display: false, grid: { display: false } }
+                    } : {}
+                }
+            });
+        }
+    });
+}
+
+// --- The rest of the admin.js file is unchanged ---
+// (The full code is provided for completeness)
+
 function initDashboard() {
     document.getElementById('logout-button').addEventListener('click', logout);
     document.getElementById('open-create-poll-modal-btn').addEventListener('click', () => ui.openModal(document.getElementById('create-poll-modal')));
@@ -58,7 +183,6 @@ function initDashboard() {
     document.getElementById('copy-join-link-btn').addEventListener('click', handleCopyLink);
 }
 
-// --- RENDER FUNCTIONS ---
 function renderPollsList(polls) {
     const pollsListEl = document.getElementById('polls-list');
     if (!pollsListEl) return;
@@ -129,99 +253,6 @@ function renderLiveControls() {
     });
 }
 
-// *** FIXED FUNCTION ***
-function renderAnalyticsTab() {
-    Object.values(state.activeCharts).forEach(chart => chart.destroy());
-    state.activeCharts = {};
-
-    const analyticsContainer = document.getElementById('analytics-container');
-    if (!analyticsContainer) return;
-    
-    const questionsWithVotes = state.questions.filter(q => 
-        q.voteCounts && Object.values(q.voteCounts).some(count => count > 0)
-    );
-
-    if (questionsWithVotes.length === 0) {
-        analyticsContainer.innerHTML = '<div class="placeholder-text-lg" style="text-align: center;"><h2>No Results Yet</h2><p>Push a question live and collect some votes to see the analytics.</p></div>';
-        return;
-    }
-
-    analyticsContainer.innerHTML = ''; 
-
-    questionsWithVotes.forEach(q => {
-        const totalVotes = Object.values(q.voteCounts || {}).reduce((sum, count) => sum + count, 0);
-
-        const optionsHtml = q.options.map(opt => {
-            const votes = q.voteCounts[opt.id] || 0;
-            const percentage = totalVotes > 0 ? ((votes / totalVotes) * 100).toFixed(0) : 0;
-            return `
-                <div class="analytics-option-row">
-                    <div class="color-legend" style="background-color: ${opt.color};"></div>
-                    <div class="option-text">${opt.text}</div>
-                    <div class="option-percent">${percentage}%</div>
-                    <div class="option-votes">(${votes} votes)</div>
-                </div>
-            `;
-        }).join('');
-
-        const card = document.createElement('div');
-        card.className = 'analytics-card';
-        card.innerHTML = `
-            <div class="analytics-card-header">
-                <h4>${q.questionText}</h4>
-                <div class="analytics-stats">
-                    <strong>${totalVotes}</strong>
-                    Total Votes
-                </div>
-            </div>
-            <div class="analytics-card-body">
-                <div class="analytics-option-list">
-                    ${optionsHtml}
-                </div>
-                <div class="analytics-chart-container">
-                    <canvas id="chart-${q.id}"></canvas>
-                </div>
-            </div>
-        `;
-
-        analyticsContainer.appendChild(card);
-
-        const ctx = document.getElementById(`chart-${q.id}`).getContext('2d');
-        if (ctx) {
-            const isPieType = q.chartType === 'pie' || q.chartType === 'doughnut';
-            
-            state.activeCharts[q.id] = new Chart(ctx, {
-                type: q.chartType || 'bar',
-                data: {
-                    labels: q.options.map(opt => opt.text),
-                    datasets: [{
-                        data: q.options.map(opt => q.voteCounts[opt.id] || 0),
-                        backgroundColor: q.options.map(opt => opt.color),
-                        borderWidth: isPieType ? 2 : 0,
-                        borderColor: isPieType ? 'var(--dark-bg)' : undefined
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    indexAxis: !isPieType ? 'y' : 'x',
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: { enabled: false },
-                        datalabels: { display: false }
-                    },
-                    scales: !isPieType ? {
-                        y: { display: false, grid: { display: false } },
-                        x: { display: false, grid: { display: false } }
-                    } : {}
-                }
-            });
-        }
-    });
-}
-
-
-// --- EVENT HANDLERS & ACTIONS ---
 function selectPoll(id) {
     if (state.selectedPollId === id) return;
     state.selectedPollId = id;
@@ -266,7 +297,7 @@ async function handleResetPoll() {
     if (confirm("Are you sure you want to reset all votes for ALL questions in this poll?")) {
         await store.resetPoll(state.currentUserId, state.selectedPollId, state.questions);
         alert("Poll votes have been reset.");
-        ui.switchTab('live');
+        renderAnalyticsTab(); // Re-render analytics to show zeros
     }
 }
 
@@ -379,7 +410,7 @@ function handleDownloadQR() {
 
     const tempContainer = document.createElement('div');
     tempContainer.style.position = 'absolute';
-    tempContainer.style.top = '-9999px'; // Move it off-screen
+    tempContainer.style.top = '-9999px';
     document.body.appendChild(tempContainer);
 
     const voteUrl = `${window.location.origin}/vote.html?user=${state.currentUserId}&poll=${state.selectedPollId}`;
@@ -395,7 +426,7 @@ function handleDownloadQR() {
         if (canvas) {
             const link = document.createElement('a');
             link.href = canvas.toDataURL('image/png');
-            link.download = `intera-poll-qr-${state.selectedPollId}.png`;
+            link.download = `livepoll-qr-${state.selectedPollId}.png`;
             
             document.body.appendChild(link);
             link.click();
@@ -404,7 +435,7 @@ function handleDownloadQR() {
             alert("Could not generate QR code. Please try again.");
         }
         document.body.removeChild(tempContainer);
-    }, 100); // 100ms delay is usually sufficient
+    }, 100);
 }
 
 function handleCopyLink() {
@@ -420,5 +451,4 @@ function handleCopyLink() {
     });
 }
 
-// --- Start the app ---
 initAuth(onLogin, onLogout);

@@ -1,6 +1,5 @@
-
 import { db } from "../app.js";
-import { doc, collection, addDoc, getDocs, updateDoc, deleteDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { doc, collection, addDoc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 export function listenForPolls(userId, callback) {
     const pollsRef = collection(db, 'users', userId, 'polls');
@@ -31,36 +30,62 @@ export async function createPoll(userId, title) {
     });
 }
 
+// *** CORRECTED FUNCTION ***
+// Uses setDoc to create the results document with a predictable ID.
 export async function saveQuestion(userId, pollId, questionId, questionData) {
     if (questionId) {
         await updateDoc(doc(db, 'users', userId, 'polls', pollId, 'questions', questionId), questionData);
     } else {
         questionData.status = 'draft';
-        questionData.voteCounts = Object.fromEntries(questionData.options.map(opt => [opt.id, 0]));
-        await addDoc(collection(db, 'users', userId, 'polls', pollId, 'questions'), questionData);
+        const newQuestionRef = await addDoc(collection(db, 'users', userId, 'polls', pollId, 'questions'), questionData);
+        
+        // Create the results document with a known ID: 'vote_counts'
+        const resultsRef = doc(db, 'users', userId, 'polls', pollId, 'questions', newQuestionRef.id, 'results', 'vote_counts');
+        const initialCounts = Object.fromEntries(questionData.options.map(opt => [opt.id, 0]));
+        await setDoc(resultsRef, { counts: initialCounts });
     }
 }
 
+// Now cleans up the known 'vote_counts' document.
 export async function deleteQuestion(userId, pollId, questionId) {
-    await deleteDoc(doc(db, 'users', userId, 'polls', pollId, 'questions', questionId));
+    const batch = writeBatch(db);
+    const questionRef = doc(db, 'users', userId, 'polls', pollId, 'questions', questionId);
+    const resultsRef = doc(questionRef, 'results', 'vote_counts');
+
+    batch.delete(resultsRef); // Delete the results doc
+    batch.delete(questionRef); // Delete the question
+    await batch.commit();
 }
+
 
 export async function deletePoll(userId, pollId) {
     const questionsRef = collection(db, 'users', userId, 'polls', pollId, 'questions');
     const questionsSnapshot = await getDocs(questionsRef);
     const batch = writeBatch(db);
-    questionsSnapshot.forEach(doc => batch.delete(doc.ref));
+
+    for (const qDoc of questionsSnapshot.docs) {
+        // For robust cleanup, query the subcollection in case of stray docs
+        const resultsSnapshot = await getDocs(collection(qDoc.ref, 'results'));
+        resultsSnapshot.forEach(resDoc => batch.delete(resDoc.ref));
+        batch.delete(qDoc.ref);
+    }
+    
+    batch.delete(doc(db, 'users', userId, 'polls', pollId));
     await batch.commit();
-    await deleteDoc(doc(db, 'users', userId, 'polls', pollId));
 }
 
+// Now resets the counts in the known 'vote_counts' document.
 export async function resetPoll(userId, pollId, questions) {
     const batch = writeBatch(db);
-    questions.forEach(q => {
-        const newVoteCounts = Object.fromEntries(q.options.map(opt => [opt.id, 0]));
+    for (const q of questions) {
         const questionRef = doc(db, 'users', userId, 'polls', pollId, 'questions', q.id);
-        batch.update(questionRef, { status: 'draft', voteCounts: newVoteCounts });
-    });
+        batch.update(questionRef, { status: 'draft' });
+        
+        const resultsRef = doc(questionRef, 'results', 'vote_counts');
+        const newVoteCounts = Object.fromEntries(q.options.map(opt => [opt.id, 0]));
+        batch.update(resultsRef, { counts: newVoteCounts });
+    }
+    
     const pollRef = doc(db, 'users', userId, 'polls', pollId);
     batch.update(pollRef, { currentQuestionId: null });
     await batch.commit();

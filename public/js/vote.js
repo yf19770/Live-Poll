@@ -1,4 +1,4 @@
-import { db, doc, onSnapshot, updateDoc, increment } from './app.js';
+import { db, doc, onSnapshot, updateDoc, increment, getDocs, collection } from './app.js';
 
 // DOM Elements
 const lobbyState = document.getElementById('lobby-state');
@@ -18,6 +18,7 @@ let currentPollId = null;
 let currentQuestionId = null;
 let unsubscribePoll = null; 
 let unsubscribeQuestion = null;
+let unsubscribeResults = null; // Listener for results
 let currentChart = null;
 
 if (typeof ChartDataLabels !== 'undefined') {
@@ -37,6 +38,7 @@ function showState(state, message) {
         if (lobbyMessage) lobbyMessage.textContent = message || 'An error occurred.';
         if (unsubscribePoll) unsubscribePoll();
         if (unsubscribeQuestion) unsubscribeQuestion();
+        if (unsubscribeResults) unsubscribeResults();
     }
 }
 
@@ -72,6 +74,7 @@ function listenToPoll(userId, pollId) {
             listenToQuestion(userId, pollId, currentQuestionId);
         } else if (!newQuestionId) {
             if (unsubscribeQuestion) unsubscribeQuestion();
+            if (unsubscribeResults) unsubscribeResults();
             currentQuestionId = null;
             showState('lobby');
         }
@@ -83,6 +86,7 @@ function listenToPoll(userId, pollId) {
 
 function listenToQuestion(userId, pollId, questionId) {
     if (unsubscribeQuestion) unsubscribeQuestion();
+    if (unsubscribeResults) unsubscribeResults();
 
     const questionRef = doc(db, 'users', userId, 'polls', pollId, 'questions', questionId);
     unsubscribeQuestion = onSnapshot(questionRef, (qDoc) => {
@@ -90,8 +94,14 @@ function listenToQuestion(userId, pollId, questionId) {
 
         const questionData = qDoc.data();
         if (questionData.status === 'results_revealed') {
-            renderResultsChart(questionData);
-            showState('results');
+            const resultsRef = doc(questionRef, 'results', 'vote_counts');
+            unsubscribeResults = onSnapshot(resultsRef, (resultsDoc) => {
+                if (resultsDoc.exists()){
+                     const voteCounts = resultsDoc.data().counts;
+                     renderResultsChart(questionData, voteCounts);
+                     showState('results');
+                }
+            });
         } else if (sessionStorage.getItem(`voted_${questionId}`)) {
             showState('voted');
         } else {
@@ -115,33 +125,42 @@ function renderQuestion(data) {
     });
 }
 
+// *** CORRECTED FUNCTION ***
+// Directly updates the 'vote_counts' document. Much simpler and more efficient.
 async function handleVote(optionId) {
     sessionStorage.setItem(`voted_${currentQuestionId}`, 'true');
     if (navigator.vibrate) navigator.vibrate(100);
     showState('voted');
 
     try {
-        const questionRef = doc(db, 'users', currentUserId, 'polls', currentPollId, 'questions', currentQuestionId);
-        await updateDoc(questionRef, { [`voteCounts.${optionId}`]: increment(1) });
+        const resultsDocRef = doc(db, 'users', currentUserId, 'polls', currentPollId, 'questions', currentQuestionId, 'results', 'vote_counts');
+
+        // Use dot notation to increment a field within the 'counts' map.
+        await updateDoc(resultsDocRef, {
+            [`counts.${optionId}`]: increment(1)
+        });
+
     } catch (error) {
         console.error("Error submitting vote:", error);
+        sessionStorage.removeItem(`voted_${currentQuestionId}`);
+        showState('question');
+        alert("Your vote could not be counted. Please try again.");
     }
 }
 
-// *** FIXED FUNCTION ***
-function renderResultsChart(data) {
+// No changes needed below this line
+function renderResultsChart(data, voteCounts) {
     if (resultsQuestionTitle) resultsQuestionTitle.textContent = data.questionText;
     
     const labels = data.options.map(opt => opt.text);
     const colors = data.options.map(opt => opt.color);
-    const votes = data.options.map(opt => data.voteCounts[opt.id] || 0);
+    const votes = data.options.map(opt => voteCounts[opt.id] || 0);
     const totalVotes = votes.reduce((a, b) => a + b, 0);
 
-    // --- HTML LEGEND GENERATION (Now for ALL chart types) ---
     const legendContainer = document.createElement('div');
     legendContainer.className = 'vote-results-legend';
     data.options.forEach(opt => {
-        const voteCount = data.voteCounts[opt.id] || 0;
+        const voteCount = voteCounts[opt.id] || 0;
         const percentage = totalVotes > 0 ? (voteCount / totalVotes * 100).toFixed(0) : 0;
         legendContainer.innerHTML += `
             <div class="legend-item">
@@ -150,11 +169,9 @@ function renderResultsChart(data) {
             </div>
         `;
     });
-    // Clear old legend and append new one
     const resultsCard = resultsState.querySelector('.card');
     const existingLegend = resultsCard.querySelector('.vote-results-legend');
     if (existingLegend) existingLegend.remove();
-    // Insert legend before the "waiting for next question" text
     resultsCard.insertBefore(legendContainer, resultsCard.querySelector('p'));
 
 
@@ -189,7 +206,7 @@ function renderResultsChart(data) {
                 }
              },
              scales: data.chartType === 'bar' ? { 
-                 y: { display: false }, // Hiding y-axis as we now have an HTML legend
+                 y: { display: false },
                  x: { ticks: { display: false }, grid: { display: false } }
              } : {}
         }

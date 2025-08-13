@@ -1,4 +1,4 @@
-import { db, doc, onSnapshot } from './app.js';
+import { db, doc, onSnapshot, collection, getDocs } from './app.js';
 
 // DOM Elements
 const lobbyScreen = document.getElementById('lobby-screen');
@@ -19,10 +19,10 @@ let currentChart = null;
 let countdownInterval = null;
 let unsubscribePoll = null;
 let unsubscribeQuestion = null;
+let unsubscribeResults = null; // Listener for results
 let currentUserId = null;
 let currentPollId = null;
 
-// Register the datalabels plugin
 if (typeof ChartDataLabels !== 'undefined') {
     Chart.register(ChartDataLabels);
 }
@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
             listenToQuestion(currentUserId, currentPollId, pollData.currentQuestionId);
         } else {
             if (unsubscribeQuestion) unsubscribeQuestion();
+            if (unsubscribeResults) unsubscribeResults();
             showScreen('lobby');
             if (qrcodeContainer) generateQRCode(currentUserId, currentPollId);
         }
@@ -56,8 +57,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+// *** CORRECTED FUNCTION ***
+// Listens to the question and its specific results document.
 function listenToQuestion(userId, pollId, questionId) {
     if (unsubscribeQuestion) unsubscribeQuestion();
+    if (unsubscribeResults) unsubscribeResults();
 
     const questionRef = doc(db, 'users', userId, 'polls', pollId, 'questions', questionId);
     unsubscribeQuestion = onSnapshot(questionRef, (qDoc) => {
@@ -65,24 +69,30 @@ function listenToQuestion(userId, pollId, questionId) {
 
         const questionData = qDoc.data();
         if (questionData.status === 'results_revealed') {
-            renderChart(questionData);
-            showScreen('results');
+            const resultsRef = doc(questionRef, 'results', 'vote_counts');
+            unsubscribeResults = onSnapshot(resultsRef, (resultsDoc) => {
+                if(resultsDoc.exists()){
+                     const voteCounts = resultsDoc.data().counts;
+                     renderChart(questionData, voteCounts);
+                     showScreen('results');
+                }
+            });
         } else {
+            if (unsubscribeResults) unsubscribeResults();
             renderQuestionView(questionData);
             showScreen('question');
         }
     });
 }
 
+
 function renderQuestionView(data) {
     if (countdownInterval) clearInterval(countdownInterval);
     if (displayQuestionTitle) displayQuestionTitle.textContent = data.questionText;
     
-    // Ensure manual legend is hidden on this screen
     const legend = document.getElementById('display-legend');
     if (legend) legend.style.display = 'none';
 
-    // Reuse the display grid for showing options before voting
     optionsDisplayGrid.style.display = 'grid';
     optionsDisplayGrid.innerHTML = data.options.map(opt => 
         `<div class="option-display-item" style="background-color:${opt.color}; border-color: ${opt.color};">${opt.text}</div>`
@@ -91,25 +101,22 @@ function renderQuestionView(data) {
     startCountdown(data.duration);
 }
 
-// *** FINALIZED FUNCTION ***
-function renderChart(data) {
+// No changes needed below this line
+function renderChart(data, voteCounts) {
     if (countdownInterval) clearInterval(countdownInterval);
     if (resultsQuestionTitle) resultsQuestionTitle.textContent = data.questionText;
     
     const labels = data.options.map(opt => opt.text);
     const colors = data.options.map(opt => opt.color);
-    const votes = data.options.map(opt => data.voteCounts[opt.id] || 0);
+    const votes = data.options.map(opt => voteCounts[opt.id] || 0);
     const totalVotes = votes.reduce((sum, count) => sum + count, 0);
 
-    // Hide the grid used for pre-vote options
     optionsDisplayGrid.style.display = 'none';
 
-    // --- Generate and inject the HTML legend ---
     let legend = document.getElementById('display-legend');
     if(!legend) {
         legend = document.createElement('div');
         legend.id = 'display-legend';
-        // Insert it right after the chart container
         resultsScreen.querySelector('.chart-container').after(legend);
     }
     
@@ -121,7 +128,6 @@ function renderChart(data) {
         </div>
     `).join('');
 
-    // --- Render the Chart ---
     if (currentChart) currentChart.destroy();
     
     const ctx = chartCanvas.getContext('2d');
@@ -131,7 +137,7 @@ function renderChart(data) {
     currentChart = new Chart(ctx, {
         type: data.chartType || 'bar',
         data: {
-            labels, // Still needed for tooltips and chart structure
+            labels,
             datasets: [{ 
                 data: votes, 
                 backgroundColor: colors,
@@ -144,11 +150,10 @@ function renderChart(data) {
              maintainAspectRatio: false,
              indexAxis: data.chartType === 'bar' ? 'y' : 'x',
              plugins: { 
-                legend: { display: false }, // Disable default legend
+                legend: { display: false },
                 datalabels: {
                     display: true,
                     color: '#fff',
-                    // This is the fix: move the labels to the center
                     anchor: 'center',
                     align: 'center',
                     font: {
@@ -166,7 +171,6 @@ function renderChart(data) {
                     }
                 }
             },
-            // Hide axis labels since we have our custom HTML legend
             scales: isPieType ? {} : { 
                 y: { ticks: { display: false }, grid: { drawBorder: false, color: 'rgba(255,255,255,0.1)' } }, 
                 x: { ticks: { display: false }, grid: { display: false } } 
@@ -210,4 +214,5 @@ function showError(message) {
     showScreen('error');
     if (unsubscribePoll) unsubscribePoll();
     if (unsubscribeQuestion) unsubscribeQuestion();
+    if (unsubscribeResults) unsubscribeResults();
 }
